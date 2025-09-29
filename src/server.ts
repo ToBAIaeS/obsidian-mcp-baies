@@ -1,5 +1,6 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -16,6 +17,9 @@ import { z } from "zod";
 import path from "path";
 import os from 'os';
 import fs from 'fs';
+import http from "http";
+import { randomUUID } from "crypto";
+import type { AddressInfo } from "net";
 import {
   listVaultResources,
   readVaultResource
@@ -37,6 +41,8 @@ export class ObsidianServer {
   private vaults: Map<string, string> = new Map();
   private rateLimiter: RateLimiter;
   private connectionMonitor: ConnectionMonitor;
+  private httpServer?: http.Server;
+  private activeTransport?: StdioServerTransport | StreamableHTTPServerTransport;
 
   constructor(vaultConfigs: { name: string; path: string }[]) {
     if (!vaultConfigs || vaultConfigs.length === 0) {
@@ -101,9 +107,9 @@ export class ObsidianServer {
 
     // Setup connection monitoring with grace period for initialization
     this.connectionMonitor.start(() => {
-      this.server.close();
+      void this.stop();
     });
-    
+
     // Update activity during initialization
     this.connectionMonitor.updateActivity();
 
@@ -264,14 +270,113 @@ export class ObsidianServer {
     });
   }
 
-  async start() {
+  async start(config: { type: "stdio" } | {
+    type: "http";
+    host: string;
+    port: number;
+    path: string;
+    allowedOrigins?: string[];
+    allowedHosts?: string[];
+    enableDnsRebindingProtection?: boolean;
+  } = { type: "stdio" }) {
+    if (config.type === "http") {
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: () => randomUUID(),
+        allowedOrigins: config.allowedOrigins && config.allowedOrigins.length > 0 ? config.allowedOrigins : undefined,
+        allowedHosts: config.allowedHosts && config.allowedHosts.length > 0 ? config.allowedHosts : undefined,
+        enableDnsRebindingProtection: config.enableDnsRebindingProtection
+      });
+
+      await this.server.connect(transport);
+      await transport.start();
+
+      transport.onerror = (error) => {
+        console.error("Transport error:", error);
+      };
+
+      const server = http.createServer(async (req, res) => {
+        const url = req.url ? new URL(req.url, `http://${req.headers.host ?? "localhost"}`) : null;
+
+        if (!url || url.pathname !== config.path) {
+          res.writeHead(404).end("Not Found");
+          return;
+        }
+
+        if (req.method === "OPTIONS") {
+          res.writeHead(204, {
+            "Allow": "GET,POST,DELETE,OPTIONS"
+          }).end();
+          return;
+        }
+
+        try {
+          await transport.handleRequest(req as Parameters<typeof transport.handleRequest>[0], res);
+        } catch (error) {
+          console.error("Failed to handle HTTP request:", error);
+          if (!res.headersSent) {
+            res.writeHead(500).end("Internal Server Error");
+          }
+        }
+      });
+
+      await new Promise<void>((resolve, reject) => {
+        server.once("error", reject);
+        server.on("error", (error) => {
+          console.error("HTTP server error:", error);
+        });
+        server.listen(config.port, config.host, () => {
+          resolve();
+        });
+      });
+
+      const address = server.address();
+      if (address && typeof address === "object") {
+        const info = address as AddressInfo;
+        const resolvedAddress = info.address === "::" ? "[::]" : info.address;
+        const displayHost = config.host === "0.0.0.0" || config.host === "::" ? "localhost" : resolvedAddress;
+        console.error(`Obsidian MCP Server running on http://${displayHost}:${info.port}${config.path}`);
+      } else {
+        console.error(`Obsidian MCP Server running on http://${config.host}:${config.port}${config.path}`);
+      }
+
+      this.httpServer = server;
+      this.activeTransport = transport;
+      return;
+    }
+
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
+    await transport.start();
     console.error("Obsidian MCP Server running on stdio");
+    this.activeTransport = transport;
   }
 
   async stop() {
     this.connectionMonitor.stop();
+    if (this.activeTransport) {
+      try {
+        await this.activeTransport.close();
+      } catch (error) {
+        console.error("Error closing transport:", error);
+      }
+      this.activeTransport = undefined;
+    }
+
+    if (this.httpServer) {
+      await new Promise<void>((resolve, reject) => {
+        this.httpServer?.close((err) => {
+          if (err) {
+            reject(err);
+            return;
+          }
+          resolve();
+        });
+      }).catch((error) => {
+        console.error("Error closing HTTP server:", error);
+      });
+      this.httpServer = undefined;
+    }
+
     await this.server.close();
     console.error("Obsidian MCP Server stopped");
   }

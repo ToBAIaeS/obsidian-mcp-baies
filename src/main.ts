@@ -30,16 +30,49 @@ interface VaultConfig {
   path: string;
 }
 
+type TransportMode = "stdio" | "http";
+
+interface CliOptions {
+  transport: TransportMode;
+  host: string;
+  port: number;
+  httpPath: string;
+  allowedOrigins: string[];
+  allowedHosts: string[];
+  enableDnsRebindingProtection: boolean;
+}
+
 async function main() {
   // Constants
   const MAX_VAULTS = 10; // Reasonable limit to prevent resource issues
 
-  const vaultArgs = process.argv.slice(2);
-  if (vaultArgs.length === 0) {
-    const helpMessage = `
+  const cliOptions: CliOptions = {
+    transport: "stdio",
+    host: "0.0.0.0",
+    port: 8080,
+    httpPath: "/mcp",
+    allowedOrigins: [],
+    allowedHosts: [],
+    enableDnsRebindingProtection: false
+  };
+
+  const rawArgs = process.argv.slice(2);
+  const vaultArgs: string[] = [];
+
+  const buildHelpMessage = () => `
 Obsidian MCP Server - Multi-vault Support
 
-Usage: obsidian-mcp <vault1_path> [vault2_path ...]
+Usage: obsidian-mcp [options] <vault1_path> [vault2_path ...]
+
+Options:
+  --help                         Show this help message
+  --transport <stdio|http>       Choose transport layer (default: stdio)
+  --host <host>                  HTTP host/interface (default: 0.0.0.0)
+  --port <port>                  HTTP port (default: ${cliOptions.port})
+  --http-path <path>             HTTP endpoint path (default: ${cliOptions.httpPath})
+  --allowed-origin <origin>      Allow an Origin header (repeatable, http only)
+  --allowed-host <host>          Allow a Host header (repeatable, http only)
+  --enable-dns-rebinding-protection  Enforce Host/Origin validation (http only)
 
 Requirements:
 - Paths must point to valid Obsidian vaults (containing .obsidian directory)
@@ -57,7 +90,13 @@ Security restrictions:
 - Cannot use symlinks that point outside their directory
 - All paths must be dedicated vault directories
 
-Note: If a path is not recognized as a vault, open it in Obsidian first to 
+Remote deployments:
+- Use --transport=http when connecting from ChatGPT Desktop
+- Ensure the chosen host/port is reachable from ChatGPT (public internet, VPN, or tunnel)
+- Protect the endpoint with network controls (reverse proxy, firewall, or access tunnel)
+- Configure --allowed-host/--allowed-origin with --enable-dns-rebinding-protection for public exposure
+
+Note: If a path is not recognized as a vault, open it in Obsidian first to
 initialize it properly. This creates the required .obsidian configuration directory.
 
 Recommended locations:
@@ -94,6 +133,100 @@ Examples:
   obsidian-mcp /mnt/network/vault         # ❌ Network mount
   obsidian-mcp ~/symlink-to-vault         # ❌ External symlink
 `;
+
+  const exitWithCliError = (message: string) => {
+    console.error(`Error: ${message}`);
+    process.stdout.write(JSON.stringify({
+      jsonrpc: "2.0",
+      error: {
+        code: ErrorCode.InvalidRequest,
+        message
+      },
+      id: null
+    }));
+    process.exit(1);
+  };
+
+  for (let i = 0; i < rawArgs.length; i++) {
+    const arg = rawArgs[i];
+
+    if (arg === "--") {
+      vaultArgs.push(...rawArgs.slice(i + 1));
+      break;
+    }
+
+    if (!arg.startsWith("--") || arg === "--help" || arg === "-h") {
+      if (arg === "--help" || arg === "-h") {
+        console.log(buildHelpMessage());
+        process.exit(0);
+      }
+
+      vaultArgs.push(arg);
+      continue;
+    }
+
+    const [flag, inlineValue] = arg.split("=", 2);
+
+    const readValue = (name: string): string => {
+      if (inlineValue !== undefined) {
+        return inlineValue;
+      }
+
+      const next = rawArgs[i + 1];
+      if (!next || next.startsWith("--")) {
+        exitWithCliError(`Missing value for ${name}`);
+      }
+
+      i += 1;
+      return next;
+    };
+
+    switch (flag) {
+      case "--transport": {
+        const value = readValue(flag).toLowerCase();
+        if (value !== "stdio" && value !== "http") {
+          exitWithCliError(`Invalid transport "${value}". Supported transports: stdio, http.`);
+        }
+        cliOptions.transport = value as TransportMode;
+        break;
+      }
+      case "--host": {
+        cliOptions.host = readValue(flag);
+        break;
+      }
+      case "--port": {
+        const value = Number(readValue(flag));
+        if (!Number.isInteger(value) || value < 1 || value > 65535) {
+          exitWithCliError(`Invalid port "${value}". Port must be an integer between 1 and 65535.`);
+        }
+        cliOptions.port = value;
+        break;
+      }
+      case "--http-path": {
+        const value = readValue(flag).trim();
+        cliOptions.httpPath = value.startsWith("/") ? value : `/${value}`;
+        break;
+      }
+      case "--allowed-origin": {
+        cliOptions.allowedOrigins.push(readValue(flag));
+        break;
+      }
+      case "--allowed-host": {
+        cliOptions.allowedHosts.push(readValue(flag));
+        break;
+      }
+      case "--enable-dns-rebinding-protection": {
+        cliOptions.enableDnsRebindingProtection = true;
+        break;
+      }
+      default: {
+        exitWithCliError(`Unknown option: ${flag}`);
+      }
+    }
+  }
+
+  if (vaultArgs.length === 0) {
+    const helpMessage = buildHelpMessage();
 
     // Log help message to stderr for user reference
     console.error(helpMessage);
@@ -447,7 +580,14 @@ Examples:
     }
 
     console.error(`Starting Obsidian MCP Server with ${uniqueVaults.length} vault${uniqueVaults.length > 1 ? 's' : ''}...`);
-    
+
+    if (cliOptions.transport === "http") {
+      console.error(`HTTP transport enabled on ${cliOptions.host}:${cliOptions.port}${cliOptions.httpPath}`);
+      if (!cliOptions.enableDnsRebindingProtection && cliOptions.allowedHosts.length === 0 && cliOptions.allowedOrigins.length === 0) {
+        console.error("Warning: No DNS rebinding protection configured. Use --allowed-host/--allowed-origin with --enable-dns-rebinding-protection when exposing the server to untrusted networks.");
+      }
+    }
+
     const server = new ObsidianServer(uniqueVaults);
     console.error("Server initialized successfully");
 
@@ -504,7 +644,19 @@ Examples:
     console.error("Server starting...\n");
 
     // Start the server without logging to stdout
-    await server.start();
+    const transportConfig = cliOptions.transport === "http"
+      ? {
+        type: "http" as const,
+        host: cliOptions.host,
+        port: cliOptions.port,
+        path: cliOptions.httpPath,
+        allowedOrigins: cliOptions.allowedOrigins,
+        allowedHosts: cliOptions.allowedHosts,
+        enableDnsRebindingProtection: cliOptions.enableDnsRebindingProtection
+      }
+      : { type: "stdio" as const };
+
+    await server.start(transportConfig);
   } catch (error) {
     console.log(error instanceof Error ? error.message : String(error));
     // Format error for MCP protocol
