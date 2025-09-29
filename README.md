@@ -63,6 +63,38 @@ If you have connection issues, check the logs at:
 - MacOS: `~/Library/Logs/Claude/mcp*.log`
 - Windows: `%APPDATA%\Claude\logs\mcp*.log`
 
+### Using with ChatGPT Desktop
+
+ChatGPT Desktop (macOS/Windows) currently supports **remote** MCP servers only. Run Obsidian MCP in HTTP mode on a machine that can reach your vault, then register the remote endpoint inside ChatGPT:
+
+1. **Start the server in HTTP mode** on the machine that hosts your vaults:
+
+   ```bash
+   npx -y obsidian-mcp --transport=http --host 0.0.0.0 --port 8080 --http-path /mcp /absolute/path/to/your/vault [/absolute/path/to/another/vault]
+   ```
+
+   - Adjust `--host`, `--port`, and `--http-path` to match your networking and reverse-proxy setup.
+   - For public deployments, place the process behind TLS and restrict access with firewalls, VPNs, or tunnels. Combine `--allowed-host`, `--allowed-origin`, and `--enable-dns-rebinding-protection` to lock down inbound requests.
+
+2. **Expose the endpoint** so ChatGPT Desktop can reach it (e.g., via HTTPS reverse proxy, secure tunnel, or VPN). The external URL should map to the path supplied in `--http-path`.
+
+3. **Register the remote server** inside ChatGPT:
+   - Open **Settings → General → Model Context Protocol**.
+   - Click **Add remote server**.
+   - Enter a name (for example, `Obsidian`).
+   - Set the URL to your published endpoint, such as `https://notes.example.com/mcp`.
+   - (Optional) Add HTTP headers if your proxy requires authentication.
+   - Save the configuration. The entry should show a green indicator once the handshake succeeds.
+
+> [!TIP]
+> After adding the server, select it in the Model Context Protocol panel and run `list-available-vaults` to confirm ChatGPT can reach your vaults.
+
+Troubleshooting tips for ChatGPT Desktop:
+
+- Verify that the HTTP endpoint is reachable from ChatGPT’s network (open firewall ports or establish a tunnel).
+- Ensure the vault path on the host machine is absolute, writable, and already initialized by Obsidian (contains `.obsidian`).
+- Check the server logs in your hosting environment or via the **View logs** link in ChatGPT to inspect stdout/stderr output.
+
 
 ### Installing via Smithery
 Warning: I am not affiliated with Smithery. I have not tested using it and encourage users to install manually if they can.
@@ -121,6 +153,7 @@ Additional documentation can be found in the `docs` directory:
 
 - `creating-tools.md` - Guide for creating new tools
 - `tool-examples.md` - Examples of using the available tools
+- `chatgpt-setup.md` - Step-by-step guide for configuring the server with ChatGPT Desktop
 
 ## Security
 
