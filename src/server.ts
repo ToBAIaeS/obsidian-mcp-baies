@@ -288,7 +288,6 @@ export class ObsidianServer {
       });
 
       await this.server.connect(transport);
-      await transport.start();
 
       transport.onerror = (error) => {
         console.error("Transport error:", error);
@@ -346,7 +345,6 @@ export class ObsidianServer {
 
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
-    await transport.start();
     console.error("Obsidian MCP Server running on stdio");
     this.activeTransport = transport;
   }
