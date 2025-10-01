@@ -109,7 +109,15 @@ export class ObsidianServer {
     this.connectionMonitor = new ConnectionMonitor();
 
     // Register prompts
-    registerPrompt(listVaultsPrompt);
+    try {
+      registerPrompt(listVaultsPrompt);
+    } catch (error) {
+      if (error instanceof McpError && error.message.includes("already registered")) {
+        console.warn("Prompt 'list-vaults' already registered - skipping duplicate registration");
+      } else {
+        throw error;
+      }
+    }
 
     this.setupHandlers();
 
@@ -352,7 +360,29 @@ export class ObsidianServer {
         }
 
         const normalizedBasePath = normalizePath(config.path);
-        const normalizedRequestPath = normalizePath(url.pathname);
+        let normalizedRequestPath = normalizePath(url.pathname);
+
+        const pathAliases = new Map<string, string>();
+        const repeatedBasePath = normalizePath(`${normalizedBasePath}${normalizedBasePath}`);
+        if (repeatedBasePath !== normalizedBasePath) {
+          pathAliases.set(repeatedBasePath, normalizedBasePath);
+          pathAliases.set(
+            normalizePath(`${repeatedBasePath}/list_actions`),
+            normalizePath(`${normalizedBasePath}/list_actions`)
+          );
+          pathAliases.set(
+            normalizePath(`${repeatedBasePath}/list-actions`),
+            normalizePath(`${normalizedBasePath}/list-actions`)
+          );
+        }
+
+        const aliasTarget = pathAliases.get(normalizedRequestPath);
+        if (aliasTarget) {
+          console.warn(
+            `Adjusted request path from ${normalizedRequestPath} to ${aliasTarget} to accommodate repeated base path segments`
+          );
+          normalizedRequestPath = aliasTarget;
+        }
 
         const handleListActions = async () => {
           if (req.method === "OPTIONS") {
@@ -414,6 +444,12 @@ export class ObsidianServer {
           [normalizePath(`${normalizedBasePath}/list_actions`), handleListActions],
           [normalizePath(`${normalizedBasePath}/list-actions`), handleListActions]
         ]);
+
+        for (const [alias, target] of pathAliases) {
+          if (!compatibilityHandlers.has(alias) && compatibilityHandlers.has(target)) {
+            compatibilityHandlers.set(alias, compatibilityHandlers.get(target)!);
+          }
+        }
 
         const compatibilityHandler = compatibilityHandlers.get(normalizedRequestPath);
         const isCompatibilityRequest = Boolean(compatibilityHandler);
