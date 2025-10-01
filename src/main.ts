@@ -46,6 +46,10 @@ async function main() {
   // Constants
   const MAX_VAULTS = 10; // Reasonable limit to prevent resource issues
 
+  const writeJsonResponse = (payload: unknown) => {
+    process.stdout.write(JSON.stringify(payload) + "\n");
+  };
+
   const cliOptions: CliOptions = {
     transport: "stdio",
     host: "0.0.0.0",
@@ -136,14 +140,14 @@ Examples:
 
   const exitWithCliError = (message: string) => {
     console.error(`Error: ${message}`);
-    process.stdout.write(JSON.stringify({
+    writeJsonResponse({
       jsonrpc: "2.0",
       error: {
         code: ErrorCode.InvalidRequest,
         message
       },
       id: null
-    }));
+    });
     process.exit(1);
   };
 
@@ -232,14 +236,14 @@ Examples:
     console.error(helpMessage);
 
     // Write MCP error to stdout
-    process.stdout.write(JSON.stringify({
+    writeJsonResponse({
       jsonrpc: "2.0",
       error: {
         code: ErrorCode.InvalidRequest,
         message: "No vault paths provided. Please provide at least one valid Obsidian vault path."
       },
       id: null
-    }));
+    });
 
     process.exit(1);
   }
@@ -262,14 +266,14 @@ Examples:
         const errorMessage = `Vault path must be absolute: ${vaultPath}`;
         console.error(`Error: ${errorMessage}`);
         
-        process.stdout.write(JSON.stringify({
+        writeJsonResponse({
           jsonrpc: "2.0",
           error: {
             code: ErrorCode.InvalidRequest,
             message: errorMessage
           },
           id: null
-        }));
+        });
         
         process.exit(1);
       }
@@ -289,14 +293,14 @@ Examples:
         
         console.error(`Error: ${errorMessage}`);
         
-        process.stdout.write(JSON.stringify({
+        writeJsonResponse({
           jsonrpc: "2.0",
           error: {
             code: ErrorCode.InvalidRequest,
             message: errorMessage
           },
           id: null
-        }));
+        });
         
         process.exit(1);
       }
@@ -311,14 +315,14 @@ Examples:
         
         console.error(`Error: ${errorMessage}`);
         
-        process.stdout.write(JSON.stringify({
+        writeJsonResponse({
           jsonrpc: "2.0",
           error: {
             code: ErrorCode.InvalidRequest,
             message: errorMessage
           },
           id: null
-        }));
+        });
         
         process.exit(1);
       }
@@ -330,14 +334,14 @@ Examples:
           const errorMessage = `Vault path must be a directory: ${vaultPath}`;
           console.error(`Error: ${errorMessage}`);
           
-          process.stdout.write(JSON.stringify({
+          writeJsonResponse({
             jsonrpc: "2.0",
             error: {
               code: ErrorCode.InvalidRequest,
               message: errorMessage
             },
             id: null
-          }));
+          });
           
           process.exit(1);
         }
@@ -359,14 +363,14 @@ Examples:
             
             console.error(`Error: ${errorMessage}`);
             
-            process.stdout.write(JSON.stringify({
+            writeJsonResponse({
               jsonrpc: "2.0",
               error: {
                 code: ErrorCode.InvalidRequest,
                 message: errorMessage
               },
               id: null
-            }));
+            });
             
             process.exit(1);
           }
@@ -387,26 +391,26 @@ Examples:
             
             console.error(`Error: ${errorMessage}`);
             
-            process.stdout.write(JSON.stringify({
+            writeJsonResponse({
               jsonrpc: "2.0",
               error: {
                 code: ErrorCode.InvalidRequest,
                 message: errorMessage
               },
               id: null
-            }));
+            });
           } else {
             const errorMessage = `Error checking Obsidian configuration in ${vaultPath}: ${error instanceof Error ? error.message : String(error)}`;
             console.error(`Error: ${errorMessage}`);
             
-            process.stdout.write(JSON.stringify({
+            writeJsonResponse({
               jsonrpc: "2.0",
               error: {
                 code: ErrorCode.InternalError,
                 message: errorMessage
               },
               id: null
-            }));
+            });
           }
           process.exit(1);
         }
@@ -424,14 +428,14 @@ Examples:
         
         console.error(`Error: ${errorMessage}`);
         
-        process.stdout.write(JSON.stringify({
+        writeJsonResponse({
           jsonrpc: "2.0",
           error: {
             code: ErrorCode.InvalidRequest,
             message: errorMessage
           },
           id: null
-        }));
+        });
         
         process.exit(1);
       }
@@ -439,14 +443,14 @@ Examples:
       const errorMessage = `Error processing vault path ${vaultPath}: ${error instanceof Error ? error.message : String(error)}`;
       console.error(`Error: ${errorMessage}`);
       
-      process.stdout.write(JSON.stringify({
+      writeJsonResponse({
         jsonrpc: "2.0",
         error: {
           code: ErrorCode.InternalError,
           message: errorMessage
         },
         id: null
-      }));
+      });
       
       process.exit(1);
     }
@@ -460,14 +464,14 @@ Examples:
     
     console.error(`Error: ${errorMessage}`);
     
-    process.stdout.write(JSON.stringify({
+    writeJsonResponse({
       jsonrpc: "2.0",
       error: {
         code: ErrorCode.InvalidRequest,
         message: errorMessage
       },
       id: null
-    }));
+    });
     
     process.exit(1);
   }
@@ -481,14 +485,14 @@ Examples:
     
     console.error(`\nError: ${errorMessage}`);
     
-    process.stdout.write(JSON.stringify({
+    writeJsonResponse({
       jsonrpc: "2.0",
       error: {
         code: ErrorCode.InvalidRequest,
         message: errorMessage
       },
       id: null
-    }));
+    });
     
     process.exit(1);
   } else if (normalizedPaths.length < vaultArgs.length) {
@@ -503,14 +507,14 @@ Examples:
     const errorMessage = error instanceof McpError ? error.message : String(error);
     console.error(`Error: ${errorMessage}`);
     
-    process.stdout.write(JSON.stringify({
+    writeJsonResponse({
       jsonrpc: "2.0",
       error: {
         code: ErrorCode.InvalidRequest,
         message: errorMessage
       },
       id: null
-    }));
+    });
     
     process.exit(1);
   }
@@ -658,7 +662,7 @@ Examples:
 
     await server.start(transportConfig);
   } catch (error) {
-    console.log(error instanceof Error ? error.message : String(error));
+    console.error(error instanceof Error ? error.message : String(error));
     // Format error for MCP protocol
     const mcpError = error instanceof McpError ? error : new McpError(
       ErrorCode.InternalError,
@@ -666,14 +670,14 @@ Examples:
     );
 
     // Write error in MCP protocol format to stdout
-    process.stdout.write(JSON.stringify({
+    writeJsonResponse({
       jsonrpc: "2.0",
       error: {
         code: mcpError.code,
         message: mcpError.message
       },
       id: null
-    }));
+    });
 
     // Log details to stderr for debugging
     console.error("\nFatal error starting server:");
