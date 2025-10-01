@@ -306,14 +306,64 @@ export class ObsidianServer {
           return;
         }
 
+        const requestOrigin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
+        const determineAllowedOrigin = () => {
+          if (config.allowedOrigins && config.allowedOrigins.length > 0) {
+            if (requestOrigin && config.allowedOrigins.includes(requestOrigin)) {
+              return requestOrigin;
+            }
+            if (config.allowedOrigins.includes("*")) {
+              return "*";
+            }
+            return undefined;
+          }
+          return requestOrigin ?? "*";
+        };
+
+        const allowedOrigin = determineAllowedOrigin();
+
+        if (config.allowedOrigins && config.allowedOrigins.length > 0 && allowedOrigin === undefined) {
+          res.writeHead(403).end("CORS origin not allowed");
+          return;
+        }
+
+        const setCorsHeaders = () => {
+          if (allowedOrigin) {
+            res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+          }
+          res.setHeader("Vary", "Origin");
+          res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
+        };
+
         if (req.method === "OPTIONS") {
+          const allowHeaders = new Set([
+            "content-type",
+            "mcp-session-id",
+            "mcp-protocol-version"
+          ]);
+          const requestedHeaders = req.headers["access-control-request-headers"];
+          if (typeof requestedHeaders === "string") {
+            requestedHeaders.split(",").forEach((header) => {
+              if (header.trim()) {
+                allowHeaders.add(header.trim().toLowerCase());
+              }
+            });
+          }
+
+          if (allowedOrigin) {
+            res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+          }
+          res.setHeader("Vary", "Origin");
           res.writeHead(204, {
-            "Allow": "GET,POST,DELETE,OPTIONS"
+            "Allow": "GET,POST,DELETE,OPTIONS",
+            "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
+            "Access-Control-Allow-Headers": Array.from(allowHeaders).join(", ")
           }).end();
           return;
         }
 
         try {
+          setCorsHeaders();
           await transport.handleRequest(req as Parameters<typeof transport.handleRequest>[0], res);
         } catch (error) {
           console.error("Failed to handle HTTP request:", error);
