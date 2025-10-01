@@ -296,7 +296,12 @@ export class ObsidianServer {
       const server = http.createServer(async (req, res) => {
         const url = req.url ? new URL(req.url, `http://${req.headers.host ?? "localhost"}`) : null;
 
-        if (!url || url.pathname !== config.path) {
+        const normalizePath = (inputPath: string) => {
+          const stripped = inputPath.replace(/\/+$/, "");
+          return stripped === "" ? "/" : stripped;
+        };
+
+        if (!url || normalizePath(url.pathname) !== normalizePath(config.path)) {
           res.writeHead(404).end("Not Found");
           return;
         }
