@@ -44,6 +44,14 @@ export class ObsidianServer {
   private httpServer?: http.Server;
   private activeTransport?: StdioServerTransport | StreamableHTTPServerTransport;
 
+  private getRegisteredTools() {
+    return Array.from(this.tools.values()).map(tool => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema.jsonSchema
+    }));
+  }
+
   constructor(vaultConfigs: { name: string; path: string }[]) {
     if (!vaultConfigs || vaultConfigs.length === 0) {
       throw new McpError(
@@ -185,11 +193,7 @@ export class ObsidianServer {
       try {
         this.validateRequest(request);
         return {
-          tools: Array.from(this.tools.values()).map(tool => ({
-            name: tool.name,
-            description: tool.description,
-            inputSchema: tool.inputSchema.jsonSchema
-          }))
+          tools: this.getRegisteredTools()
         };
       } catch (error) {
         console.error("Error handling list-tools request:", error);
@@ -338,10 +342,86 @@ export class ObsidianServer {
           return stripped === "" ? "/" : stripped;
         };
 
-        if (!url || normalizePath(url.pathname) !== normalizePath(config.path)) {
+        if (!url) {
           console.error(
             `Rejected ${req.method ?? "UNKNOWN"} request for ${req.url ?? "unknown URL"}: ` +
             `path mismatch (expected ${normalizePath(config.path)})`
+          );
+          res.writeHead(404).end("Not Found");
+          return;
+        }
+
+        const normalizedBasePath = normalizePath(config.path);
+        const normalizedRequestPath = normalizePath(url.pathname);
+
+        const handleListActions = async () => {
+          if (req.method === "OPTIONS") {
+            const allowHeaders = new Set([
+              "content-type",
+              "mcp-session-id",
+              "mcp-protocol-version"
+            ]);
+            const requestedHeaders = req.headers["access-control-request-headers"];
+            if (typeof requestedHeaders === "string") {
+              requestedHeaders.split(",").forEach((header) => {
+                if (header.trim()) {
+                  allowHeaders.add(header.trim().toLowerCase());
+                }
+              });
+            }
+
+            if (allowedOrigin) {
+              res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
+            }
+            res.setHeader("Vary", "Origin");
+            res.writeHead(204, {
+              "Allow": "POST,OPTIONS",
+              "Access-Control-Allow-Methods": "POST,OPTIONS",
+              "Access-Control-Allow-Headers": Array.from(allowHeaders).join(", ")
+            }).end();
+            return true;
+          }
+
+          if (req.method !== "POST") {
+            console.error(`Rejected ${req.method ?? "UNKNOWN"} request for legacy discovery endpoint ${normalizedRequestPath}`);
+            setCorsHeaders();
+            res.writeHead(405, {
+              "Allow": "POST,OPTIONS"
+            }).end("Method Not Allowed");
+            return true;
+          }
+
+          setCorsHeaders();
+
+          const tools = this.getRegisteredTools();
+          const actions = tools.map(tool => ({
+            id: tool.name,
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.inputSchema
+          }));
+
+          res.writeHead(200, {
+            "Content-Type": "application/json"
+          }).end(JSON.stringify({
+            actions,
+            next_page_cursor: null
+          }));
+          return true;
+        };
+
+        const compatibilityHandlers = new Map<string, () => Promise<boolean>>([
+          [normalizePath(`${normalizedBasePath}/list_actions`), handleListActions],
+          [normalizePath(`${normalizedBasePath}/list-actions`), handleListActions]
+        ]);
+
+        const compatibilityHandler = compatibilityHandlers.get(normalizedRequestPath);
+        const isCompatibilityRequest = Boolean(compatibilityHandler);
+
+        if (!isCompatibilityRequest && normalizedRequestPath !== normalizedBasePath) {
+          console.error(
+            `Rejected ${req.method ?? "UNKNOWN"} request for ${req.url ?? "unknown URL"}: ` +
+            `path mismatch (expected ${normalizedBasePath})`
           );
           res.writeHead(404).end("Not Found");
           return;
@@ -378,6 +458,21 @@ export class ObsidianServer {
           res.setHeader("Vary", "Origin");
           res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id");
         };
+
+        if (isCompatibilityRequest && compatibilityHandler) {
+          try {
+            const handled = await compatibilityHandler();
+            if (!handled) {
+              throw new Error("Compatibility handler failed to process request");
+            }
+          } catch (error) {
+            console.error("Failed to handle compatibility request:", error);
+            if (!res.headersSent) {
+              res.writeHead(500).end("Internal Server Error");
+            }
+          }
+          return;
+        }
 
         if (req.method === "OPTIONS") {
           const allowHeaders = new Set([

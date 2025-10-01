@@ -288,7 +288,11 @@ export function normalizePath(inputPath: string): string {
 
     // Only validate filename portion for invalid Windows characters, allowing : for drive letters
     const filename = normalized.split(/[\\/]/).pop() || '';
-    if (/[<>"|?*]/.test(filename) || (/:/.test(filename) && !/^[A-Za-z]:$/.test(filename))) {
+    const isLikelyWindowsPath = process.platform === 'win32' || /[\\]/.test(normalized) || /^[A-Za-z]:/.test(normalized);
+    if (
+      /[<>"|?*]/.test(filename) ||
+      (isLikelyWindowsPath && /:/.test(filename) && !/^[A-Za-z]:$/.test(filename))
+    ) {
       throw new McpError(
         ErrorCode.InvalidRequest,
         `Filename contains invalid characters: ${filename}`
