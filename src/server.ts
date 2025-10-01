@@ -135,6 +135,7 @@ export class ObsidianServer {
 
       // Check rate limit (using method name as client id for basic implementation)
       if (!this.rateLimiter.checkLimit(request.method)) {
+        console.error(`Rate limit exceeded for method: ${request.method ?? "<unknown>"}`);
         throw new McpError(ErrorCode.InvalidRequest, "Rate limit exceeded");
       }
     } catch (error) {
@@ -146,126 +147,162 @@ export class ObsidianServer {
   private setupHandlers() {
     // List available prompts
     this.server.setRequestHandler(ListPromptsRequestSchema, async (request) => {
-      this.validateRequest(request);
-      return listPrompts();
+      try {
+        this.validateRequest(request);
+        return listPrompts();
+      } catch (error) {
+        console.error("Error handling list-prompts request:", error);
+        throw error;
+      }
     });
 
     // Get specific prompt
     this.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-      this.validateRequest(request);
-      const { name, arguments: args } = request.params;
-      
-      if (!name || typeof name !== 'string') {
-        throw new McpError(ErrorCode.InvalidParams, "Missing or invalid prompt name");
-      }
+      try {
+        this.validateRequest(request);
+        const { name, arguments: args } = request.params;
 
-      const result = await getPrompt(name, this.vaults, args);
-      return {
-        ...result,
-        _meta: {
-          promptName: name,
-          timestamp: new Date().toISOString()
+        if (!name || typeof name !== 'string') {
+          throw new McpError(ErrorCode.InvalidParams, "Missing or invalid prompt name");
         }
-      };
+
+        const result = await getPrompt(name, this.vaults, args);
+        return {
+          ...result,
+          _meta: {
+            promptName: name,
+            timestamp: new Date().toISOString()
+          }
+        };
+      } catch (error) {
+        console.error("Error handling get-prompt request:", error);
+        throw error;
+      }
     });
 
     // List available tools
     this.server.setRequestHandler(ListToolsRequestSchema, async (request) => {
-      this.validateRequest(request);
-      return {
-        tools: Array.from(this.tools.values()).map(tool => ({
-          name: tool.name,
-          description: tool.description,
-          inputSchema: tool.inputSchema.jsonSchema
-        }))
-      };
+      try {
+        this.validateRequest(request);
+        return {
+          tools: Array.from(this.tools.values()).map(tool => ({
+            name: tool.name,
+            description: tool.description,
+            inputSchema: tool.inputSchema.jsonSchema
+          }))
+        };
+      } catch (error) {
+        console.error("Error handling list-tools request:", error);
+        throw error;
+      }
     });
 
     // List available resources
     this.server.setRequestHandler(ListResourcesRequestSchema, async (request) => {
-      this.validateRequest(request);
-      const resources = await listVaultResources(this.vaults);
-      return {
-        resources,
-        resourceTemplates: []
-      };
+      try {
+        this.validateRequest(request);
+        const resources = await listVaultResources(this.vaults);
+        return {
+          resources,
+          resourceTemplates: []
+        };
+      } catch (error) {
+        console.error("Error handling list-resources request:", error);
+        throw error;
+      }
     });
 
     // Read resource content
     this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-      this.validateRequest(request);
-      const uri = request.params?.uri;
-      if (!uri || typeof uri !== 'string') {
-        throw new McpError(ErrorCode.InvalidParams, "Missing or invalid URI parameter");
-      }
+      try {
+        this.validateRequest(request);
+        const uri = request.params?.uri;
+        if (!uri || typeof uri !== 'string') {
+          throw new McpError(ErrorCode.InvalidParams, "Missing or invalid URI parameter");
+        }
 
-      if (!uri.startsWith('obsidian-vault://')) {
-        throw new McpError(ErrorCode.InvalidParams, "Invalid URI format. Only vault resources are supported.");
-      }
+        if (!uri.startsWith('obsidian-vault://')) {
+          throw new McpError(ErrorCode.InvalidParams, "Invalid URI format. Only vault resources are supported.");
+        }
 
-      return {
-        contents: [await readVaultResource(this.vaults, uri)]
-      };
+        return {
+          contents: [await readVaultResource(this.vaults, uri)]
+        };
+      } catch (error) {
+        console.error("Error handling read-resource request:", error);
+        throw error;
+      }
     });
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
-      this.validateRequest(request);
-      const params = request.params;
-      if (!params || typeof params !== 'object') {
-        throw new McpError(ErrorCode.InvalidParams, "Invalid request parameters");
-      }
-      
-      const name = params.name;
-      const args = params.arguments;
-      
-      if (!name || typeof name !== 'string') {
-        throw new McpError(ErrorCode.InvalidParams, "Missing or invalid tool name");
-      }
-
-      const tool = this.tools.get(name);
-      if (!tool) {
-        throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
-      }
-
       try {
-        // Validate and transform arguments using tool's schema handler
-        const validatedArgs = tool.inputSchema.parse(args);
-        
-        // Execute tool with validated arguments
-        const result = await tool.handler(validatedArgs);
-        
-        return {
-          _meta: {
-            toolName: name,
-            timestamp: new Date().toISOString(),
-            success: true
-          },
-          content: result.content
-        };
-      } catch (error: unknown) {
-        if (error instanceof z.ZodError) {
-          const formattedErrors = error.errors.map(e => {
-            const path = e.path.join(".");
-            const message = e.message;
-            return `${path ? path + ': ' : ''}${message}`;
-          }).join("\n");
-          
+        this.validateRequest(request);
+        const params = request.params;
+        if (!params || typeof params !== 'object') {
+          throw new McpError(ErrorCode.InvalidParams, "Invalid request parameters");
+        }
+
+        const name = params.name;
+        const args = params.arguments;
+
+        if (!name || typeof name !== 'string') {
+          throw new McpError(ErrorCode.InvalidParams, "Missing or invalid tool name");
+        }
+
+        const tool = this.tools.get(name);
+        if (!tool) {
+          throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
+        }
+
+        try {
+          // Validate and transform arguments using tool's schema handler
+          const validatedArgs = tool.inputSchema.parse(args);
+
+          // Execute tool with validated arguments
+          const result = await tool.handler(validatedArgs);
+
+          return {
+            _meta: {
+              toolName: name,
+              timestamp: new Date().toISOString(),
+              success: true
+            },
+            content: result.content
+          };
+        } catch (error: unknown) {
+          if (error instanceof z.ZodError) {
+            const formattedErrors = error.errors.map(e => {
+              const path = e.path.join(".");
+              const message = e.message;
+              return `${path ? path + ': ' : ''}${message}`;
+            }).join("\n");
+
+            console.error(`Validation error calling tool ${name}:`, formattedErrors);
+            throw new McpError(
+              ErrorCode.InvalidParams,
+              `Invalid arguments:\n${formattedErrors}`
+            );
+          }
+
+          // Enhance error reporting
+          if (error instanceof McpError) {
+            console.error(`MCP error from tool ${name}:`, error.message);
+            throw error;
+          }
+
+          const message = error instanceof Error ? error.message : String(error);
+          console.error(`Tool execution failed for ${name}:`, error);
+          // Convert unknown errors to McpError with helpful message
           throw new McpError(
-            ErrorCode.InvalidParams,
-            `Invalid arguments:\n${formattedErrors}`
+            ErrorCode.InternalError,
+            `Tool execution failed: ${message}`
           );
         }
-        
-        // Enhance error reporting
-        if (error instanceof McpError) {
-          throw error;
+      } catch (error) {
+        if (!(error instanceof McpError)) {
+          console.error("Unexpected error handling call-tool request:", error);
         }
-        
-        // Convert unknown errors to McpError with helpful message
-        throw new McpError(
-          ErrorCode.InternalError,
-          `Tool execution failed: ${error instanceof Error ? error.message : String(error)}`
-        );
+        throw error;
       }
     });
   }
@@ -302,6 +339,10 @@ export class ObsidianServer {
         };
 
         if (!url || normalizePath(url.pathname) !== normalizePath(config.path)) {
+          console.error(
+            `Rejected ${req.method ?? "UNKNOWN"} request for ${req.url ?? "unknown URL"}: ` +
+            `path mismatch (expected ${normalizePath(config.path)})`
+          );
           res.writeHead(404).end("Not Found");
           return;
         }
@@ -323,6 +364,9 @@ export class ObsidianServer {
         const allowedOrigin = determineAllowedOrigin();
 
         if (config.allowedOrigins && config.allowedOrigins.length > 0 && allowedOrigin === undefined) {
+          console.error(
+            `Rejected request from origin ${requestOrigin ?? "<unknown>"}: origin not in allow list (${config.allowedOrigins.join(", ")})`
+          );
           res.writeHead(403).end("CORS origin not allowed");
           return;
         }
