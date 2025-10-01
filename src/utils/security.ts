@@ -37,6 +37,7 @@ const MAX_MESSAGE_SIZE = 5 * 1024 * 1024; // 5MB for local usage
 export function validateMessageSize(message: any): void {
   const size = new TextEncoder().encode(JSON.stringify(message)).length;
   if (size > MAX_MESSAGE_SIZE) {
+    console.error(`Received message exceeding size limit: ${size} bytes (limit ${MAX_MESSAGE_SIZE} bytes)`);
     throw new McpError(
       ErrorCode.InvalidRequest,
       `Message size exceeds limit of ${MAX_MESSAGE_SIZE} bytes`
@@ -86,6 +87,10 @@ export class ConnectionMonitor {
         const inactiveTime = now - this.lastActivity;
 
         if (inactiveTime > this.timeout) {
+          const secondsInactive = Math.round(inactiveTime / 1000);
+          console.error(
+            `Connection inactive for ${secondsInactive}s (timeout ${Math.round(this.timeout / 1000)}s). Triggering shutdown.`
+          );
           onTimeout();
         }
       }, 10000); // Check every 10 seconds
