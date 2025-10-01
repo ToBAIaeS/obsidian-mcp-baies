@@ -363,6 +363,38 @@ export class ObsidianServer {
         }
 
         try {
+          const acceptHeader = req.headers.accept;
+          const normalizeAcceptHeader = () => {
+            if (typeof acceptHeader !== "string" || acceptHeader.trim() === "") {
+              req.headers.accept = "application/json, text/event-stream";
+              return;
+            }
+
+            const tokens = acceptHeader
+              .split(",")
+              .map((token) => token.trim())
+              .filter((token) => token.length > 0);
+
+            const hasTextEventStream = tokens.some(
+              (token) => token.toLowerCase().startsWith("text/event-stream")
+            );
+
+            const hasNonGenericToken = tokens.some((token) => {
+              const lower = token.toLowerCase();
+              return !(lower === "*/*" || lower.startsWith("*/*;"));
+            });
+
+            if (!hasNonGenericToken) {
+              req.headers.accept = "application/json, text/event-stream";
+              return;
+            }
+
+            if (!hasTextEventStream) {
+              req.headers.accept = `${acceptHeader}, text/event-stream`;
+            }
+          };
+
+          normalizeAcceptHeader();
           setCorsHeaders();
           await transport.handleRequest(req as Parameters<typeof transport.handleRequest>[0], res);
         } catch (error) {
