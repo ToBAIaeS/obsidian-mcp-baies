@@ -65,7 +65,7 @@ If you have connection issues, check the logs at:
 
 ### Using with ChatGPT Desktop
 
-ChatGPT Desktop (macOS/Windows) currently supports **remote** MCP servers only. Run Obsidian MCP in HTTP mode on a machine that can reach your vault, then register the remote endpoint inside ChatGPT:
+ChatGPT Desktop (macOS/Windows) currently supports **remote** MCP servers only. Run Obsidian MCP in HTTP mode on a machine that can reach your vault, then register the remote endpoint through the ChatGPT web app:
 
 1. **Start the server in HTTP mode** on the machine that hosts your vaults:
 
@@ -78,16 +78,18 @@ ChatGPT Desktop (macOS/Windows) currently supports **remote** MCP servers only. 
 
 2. **Expose the endpoint** so ChatGPT Desktop can reach it (e.g., via HTTPS reverse proxy, secure tunnel, or VPN). The external URL should map to the path supplied in `--http-path`.
 
-3. **Register the remote server** inside ChatGPT:
-   - Open **Settings → General → Model Context Protocol**.
-   - Click **Add remote server**.
-   - Enter a name (for example, `Obsidian`).
-   - Set the URL to your published endpoint, such as `https://notes.example.com/mcp`.
+3. **Register the remote server** as a connector via the ChatGPT web interface:
+   - Visit [chatgpt.com](https://chatgpt.com) in a desktop browser and open **Settings → Connectors**.
+   - Enable **Connectors** if the feature toggle appears.
+   - Click **Add connector** → **Model Context Protocol (Beta)**, give it a name (for example, `Obsidian`), and set the **Base URL** to your published endpoint such as `https://notes.example.com/mcp`.
    - (Optional) Add HTTP headers if your proxy requires authentication.
-   - Save the configuration. The entry should show a green indicator once the handshake succeeds.
+   - Click **Save**. ChatGPT Desktop will sync the connector from your account; the entry will show a green indicator once the handshake succeeds.
+
+> [!NOTE]
+> ChatGPT Desktop mirrors the connectors configured in the ChatGPT web app and does not provide its own management UI. Create and edit the connector on the web; the desktop client will pick up your changes automatically.
 
 > [!TIP]
-> After adding the server, select it in the Model Context Protocol panel and run `list-available-vaults` to confirm ChatGPT can reach your vaults.
+> After saving the connector, open ChatGPT and use the connector's tool picker to run `list-available-vaults` to confirm ChatGPT can reach your vaults.
 
 Troubleshooting tips for ChatGPT Desktop:
 

@@ -1,6 +1,6 @@
 # Using Obsidian MCP with ChatGPT Desktop
 
-ChatGPT Desktop (macOS and Windows) requires MCP servers to be reachable over HTTP(S). Run `obsidian-mcp` in HTTP mode on a machine that has access to your vaults, then register the remote endpoint inside ChatGPT.
+ChatGPT Desktop (macOS and Windows) requires MCP servers to be reachable over HTTP(S). Run `obsidian-mcp` in HTTP mode on a machine that has access to your vaults, then register the remote endpoint through the ChatGPT web app.
 
 ## Prerequisites
 
@@ -22,13 +22,15 @@ ChatGPT Desktop (macOS and Windows) requires MCP servers to be reachable over HT
 
 2. **Expose the endpoint** so ChatGPT can reach it. Map the external URL (e.g. `https://notes.example.com/mcp`) to the host, port, and path you configured above.
 
-3. **Register the remote server** in ChatGPT Desktop:
-   - Open **Settings → General → Model Context Protocol**.
-   - Choose **Add remote server**.
-   - Provide a name such as `Obsidian`.
-   - Set the URL to your published endpoint (e.g. `https://notes.example.com/mcp`).
+3. **Register the remote server** as a connector via the ChatGPT web interface:
+   - Visit [chatgpt.com](https://chatgpt.com) in a desktop browser and open **Settings → Connectors**.
+   - Enable **Connectors** if prompted to turn the feature on.
+   - Click **Add connector** → **Model Context Protocol (Beta)**, provide a name such as `Obsidian`, and set the **Base URL** to your published endpoint (e.g. `https://notes.example.com/mcp`).
    - (Optional) Add HTTP headers if your proxy enforces authentication.
-   - Save the configuration. The entry should display a green indicator once the handshake succeeds.
+   - Click **Save**. ChatGPT Desktop will sync the connector from your account, and the entry will display a green indicator once the handshake succeeds.
+
+> [!NOTE]
+> ChatGPT Desktop mirrors the connectors configured in the ChatGPT web app; it does not provide its own UI for creating or editing them.
 
 ## Troubleshooting
 
